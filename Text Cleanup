@@ -1,0 +1,36 @@
+# Import packages
+import re
+import os
+import pandas as pd
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+
+# Extract Candidate Name from Candidate Name Column
+def extract_names_from_text(text):
+    # Define the regex pattern to extract the name after the title and before the brackets (if any) or before the question mark
+    pattern = r'\b(?:Dr|Mr|Miss|Mrs|Ms)\s+([A-Za-z-]+(?:\s+[A-Za-z-]+)*)(?:\s*\([^)]*\))?\s*\?-?'
+    # Find all matches in the text
+    matches = re.findall(pattern, text)
+    return matches[0].title() if matches else None
+
+def process_and_extract_names(container_name, file_name_xmloutput, folder_name_xmloutput, queuename, data_column_name):
+    # Copy the file from Blob Storage to local path
+    storage_path = wasbs_file_str(container_name, folder_name_xmloutput, file_name_xmloutput)
+    dbutils.fs.cp(storage_path, '.')
+    local_path = f'/dbfs/{os.path.basename(storage_path)}'
+    
+    # Read the decrypted file into a DataFrame
+    df_wqi = pd.read_parquet(local_path)
+
+    # Extract names from the specified column
+    df_wqi['Extracted Name'] = df_wqi['Candidate Name'].apply(extract_names_from_text)
+    
+    # Define the cleaned filename
+    cleaned_filename = file_name_xmloutput.replace('_converted.parquet', '_cleaned.parquet')
+
+    # Save the cleaned DataFrame back to storage
+    save_to_storage(df_wqi, container_name, cleaned_filename, folder_name_xmloutput)
+    
+    return df_wqi
+
+# Process and extract names
+df_with_names = process_and_extract_names(container_name, file_name_xmloutput, folder_name_xmloutput, queuename, 'Candidate Name')
